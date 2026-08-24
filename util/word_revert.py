@@ -1,4 +1,3 @@
-import spacy
 import os
 
 from api.basic_api import use_api_get_prototype
@@ -26,6 +25,7 @@ def word_revert(word: str) -> str:
     :return: 原型
     """
     try:
+        import spacy
         nlp = spacy.load(model_path)
         module.logger.info(f"{word}优先使用模型转原型")
         doc = nlp(word)
