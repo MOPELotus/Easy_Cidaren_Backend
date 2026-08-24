@@ -29,5 +29,6 @@ Important modules:
 ## License and provenance
 
 Licensed under GPL-3.0, following the upstream project. The backend extraction
-is based on `ularch/Easy_Cidaren` and preserves its attribution.
+is based on `ularch/Easy_Cidaren` revision
+`2ce37edca67f00954d610f2d770cb6bb4082d5fd` and preserves its attribution.
 Asterism-specific orchestration and UI are maintained separately.
