@@ -183,22 +183,10 @@ class PublicInfo:
         if music_path is not None:
             self._music_path = music_path
 
-        with open(os.path.join(self.path, "config", "config.json"), 'r', encoding="utf-8") as f:
-            data = json.load(f)
-            data['min_time'] = self._min_time
-            data['max_time'] = self._max_time
-            data['spend_min_time'] = self._spend_min_time
-            data['spend_max_time'] = self._spend_max_time
-            data['br_choices'] = self._br_choices
-            data['accept_encoding'] = self._headers_accept_encoding
-            if play_music is not None:
-                data['play_music'] = self._play_music
-            if music_path is not None:
-                data['music_path'] = self._music_path
-            data['token'] = self._token
-        data_str = json.dumps(data, indent=2)
-        with open(os.path.join(self.path, "config", "config.json"), 'w', encoding="utf-8") as f:
-            f.write(data_str)
+    def set_spend_time(self, min_time, max_time):
+        """Override answer pacing for an embedding worker without touching UI settings."""
+        self._spend_min_time = int(min_time)
+        self._spend_max_time = int(max_time)
 
     def ignore_version(self, version):
         with open(os.path.join(self.path, "config", "config.json"), 'r', encoding="utf-8") as f:

@@ -38,6 +38,13 @@ class HeadlessTaskRunner:
         self.public = PublicInfo(str(pathlib.Path(root)))
         self._progress = progress or (lambda _done, _total, _message: None)
         self._log = log or (lambda _message: None)
+        # Optional Asterism answer adapter.  The donor answer state machine is
+        # intentionally kept intact; this hook only replaces the answer value
+        # for a question when the control plane supplied a matching candidate.
+        self._answer_override = None
+
+    def set_answer_override(self, callback: Callable[[PublicInfo, int], object | None] | None) -> None:
+        self._answer_override = callback
 
     def _emit_progress(self, message: str = "正在执行词达人原生答题流程") -> None:
         exam = self.public.exam
@@ -66,7 +73,13 @@ class HeadlessTaskRunner:
             if mode == 0:
                 jump_read(public)
             else:
-                option = answer(public, mode)
+                option = (
+                    self._answer_override(public, mode)
+                    if self._answer_override is not None
+                    else None
+                )
+                if option is None:
+                    option = answer(public, mode)
                 if option is None:
                     public.topic_code = public.exam["topic_code"]
                     public.skip_count += 1
