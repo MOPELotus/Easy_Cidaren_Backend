@@ -21,7 +21,7 @@ from cryptography.hazmat.primitives.kdf.hkdf import HKDF
 
 WECHAT_APP_ID = "wx2a694105a6abbe6d"
 WECHAT_SCOPE = "snsapi_userinfo"
-LOGIN_VERSION = "2.7.0.260715_01"
+LOGIN_VERSION = "2.7.0.261019_01"
 CRYPTO_VERSION = "v1"
 SIGNING_SUFFIX = "ajfajfamsnfaflfasakljdlalkflak"
 LOGIN_URL = "https://app.vocabgo.com/student/api/Auth/Wechat/V2/LoginByWechatCode"
@@ -76,8 +76,12 @@ def begin_authorization() -> OAuthAuthorization:
 def _callback_values(callback_url: str) -> dict[str, str]:
     if not callback_url or len(callback_url) > 16 * 1024 or callback_url.strip() != callback_url:
         raise OAuthError("invalid Cidaren OAuth callback URL")
-    parsed = urlsplit(callback_url)
-    if parsed.scheme != "https" or parsed.hostname != "app.vocabgo.com" or parsed.port is not None:
+    try:
+        parsed = urlsplit(callback_url)
+        port = parsed.port
+    except ValueError as exc:
+        raise OAuthError("invalid Cidaren OAuth callback URL") from exc
+    if parsed.scheme != "https" or parsed.hostname != "app.vocabgo.com" or port is not None:
         raise OAuthError("invalid Cidaren OAuth callback origin")
     if parsed.username is not None or parsed.password is not None or parsed.path not in ("/student", "/student/"):
         raise OAuthError("invalid Cidaren OAuth callback path")

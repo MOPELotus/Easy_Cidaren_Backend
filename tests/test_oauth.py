@@ -85,6 +85,29 @@ class OAuthTest(unittest.TestCase):
         with self.assertRaises(RuntimeError):
             parse_callback(callback, state_digest, marker_digest)
 
+    def test_callback_rejects_malformed_port(self):
+        with self.assertRaises(RuntimeError):
+            parse_callback("https://app.vocabgo.com:bad/student/?code=x", "", "")
+
+    def test_full_jv99_response_uses_embedded_version(self):
+        from decryptencrypt.debase64 import debase64, set_crypto_document, clear_crypto_document
+        secret, salt, iv = bytes(range(32)), b"synthetic-salt", bytes(range(12))
+        aad = "vcg-exam:test-account"
+        key = HKDF(algorithm=hashes.SHA256(), length=32, salt=salt,
+                   info=b"vcg-exam-aes:test-account").derive(secret)
+        encrypted = AESGCM(key).encrypt(iv, b'{"ok": true}', aad.encode())
+        set_crypto_document({"login_info": {
+            "a": "h" + base64.b64encode(secret).decode(),
+            "b": "a" + base64.b64encode(salt).decode(),
+        }})
+        try:
+            self.assertEqual(debase64({"jv": 99, "data": {
+                "iv": base64.b64encode(iv).decode(),
+                "cipher_text": base64.b64encode(encrypted).decode(), "aad": aad,
+            }}), {"ok": True})
+        finally:
+            clear_crypto_document()
+
     def test_exchange_decrypts_token_and_returns_jv99_context(self):
         authorization = begin_authorization()
         values = parse_qs(urlsplit(authorization.authorization_url).query)

@@ -37,6 +37,13 @@ JV_THREE = {
 
 DEFAULT_JV_TWO = JV_TWO["2_9214"]
 _runtime_crypto_document = None
+_active_token = None
+
+
+def set_active_token(token):
+    """Bind file-backed crypto selection to the current API account."""
+    global _active_token
+    _active_token = token
 
 
 def _json_loads_maybe(value):
@@ -56,6 +63,8 @@ def set_crypto_document(document):
     document = _json_loads_maybe(document)
     if not isinstance(document, dict):
         raise ValueError("crypto document must be a JSON object")
+    if _decode_crypto_document(document) is None:
+        raise ValueError("crypto document contains no valid key and salt")
     # Copy through JSON so callers cannot mutate the active context and so the
     # accepted shape is exactly what the file-backed path already supports.
     _runtime_crypto_document = json.loads(json.dumps(document))
@@ -99,7 +108,10 @@ def _decode_prefixed_base64(value, prefix):
 
 def _read_crypto_context():
     if _runtime_crypto_document is not None:
-        runtime = _decode_crypto_document(_runtime_crypto_document)
+        document_token = _runtime_crypto_document.get("token")
+        runtime = (_decode_crypto_document(_runtime_crypto_document)
+                   if not document_token or _active_token is None or document_token == _active_token
+                   else None)
         if runtime is not None:
             shared_secret, salt = runtime
             return shared_secret, salt, "process-local OAuth session"
@@ -110,6 +122,9 @@ def _read_crypto_context():
 
         with open(path, "r", encoding="utf-8") as f:
             data = json.load(f)
+
+        if _active_token is not None and data.get("token") != _active_token:
+            continue
 
         decoded = _decode_crypto_document(data)
         if decoded is not None:
@@ -242,7 +257,7 @@ def _loads_decoded_json(decoded):
         raise
 
 
-def debase64(data: dict or str, jv: str = "0"):
+def debase64(data: dict or str, jv: str = None):
     """
     解码词达人响应。
     """

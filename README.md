@@ -32,3 +32,14 @@ Licensed under GPL-3.0, following the upstream project. The backend extraction
 is based on `ularch/Easy_Cidaren` revision
 `2ce37edca67f00954d610f2d770cb6bb4082d5fd` and preserves its attribution.
 Asterism-specific orchestration and UI are maintained separately.
+
+## 2026-11-07 integration status
+
+The desktop fork now reuses this repository's OAuth V2 login and headless runner:
+[MOPELotus/Easy_Cidaren](https://github.com/MOPELotus/Easy_Cidaren).
+This library keeps its headless boundary and does not depend on Qt or MITM.
+
+The OAuth request version follows the official H5 build `2.7.0.261019_01`.
+Full response envelopes now honor their embedded `jv=99`, and malformed callback
+ports fail as OAuth errors. Synthetic handshake and authenticated-decryption tests
+cover these paths. Real WeChat authorization still requires the account owner.
