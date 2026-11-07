@@ -113,7 +113,7 @@ def _options(exam):
             if isinstance(tag, bool) or not isinstance(tag, (str, int)):
                 raise ValueError('选项提交标记无效')
             result.append((content, tag))
-    if len(result) > 26 or len({x[0] for x in result}) != len(result):
+    if len(result) > 26 or (normalized_mode(exam['topic_mode']) != 32 and len({x[0] for x in result}) != len(result)):
         raise ValueError('选项重复或数量超出协议范围')
     return result
 

@@ -156,3 +156,10 @@ class LotusTests(unittest.TestCase):
         count_answer_source(p,('task','topic'),'fallback')
         count_answer_source(p,('task','topic'),'fallback')
         self.assertEqual(p.lotus_answer_count,0);self.assertEqual(p.fallback_answer_count,1)
+
+    def test_sorting_word_pool_can_repeat_placeholders(self):
+        e=exam(32,[{'content':'trade'},{'content':'sth.'},{'content':'for'},{'content':'sth.'}])
+        e['stem']={'content':'_ _ _ _','remark':'用某物交换某物'}
+        self.assertEqual(self.parsed(e,['trade','sth.','for','sth.']),'trade,sth.,for,sth.')
+        ambiguous=exam(15,[{'content':'same'},{'content':'same'}])
+        with self.assertRaises(ValueError):build_question(ambiguous,15)
