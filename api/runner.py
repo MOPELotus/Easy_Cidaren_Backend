@@ -121,8 +121,8 @@ class HeadlessTaskRunner:
         public.course_id = task.get("course_id") or public.course_id
         public.release_id = task.get("release_id") or ""
         task_type = int(task.get("task_type") or 1)
-        PublicInfo.task_type_int = task_type
-        PublicInfo.task_type = "ClassTask" if task_type == 2 else "StudyTask"
+        PublicInfo.task_type_int = 2
+        PublicInfo.task_type = "ClassTask"
 
         get_all_unit(public)
         units = public.all_unit.get("task_list", []) if isinstance(public.all_unit, Mapping) else []
