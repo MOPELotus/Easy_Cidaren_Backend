@@ -183,6 +183,9 @@ def build_question(exam, mode):
         request.update(type='completion', blankCount=len(lengths),
                        title=title + '\n按空位顺序填写完整单词。字母数：' + json.dumps(lengths) + '\n已知前缀：' + str(exam.get('w_tip') or ''))
         meta['lengths'] = lengths
+        tip = exam.get('w_tip')
+        if len(lengths) == 1 and isinstance(tip, str) and re.fullmatch('[A-Za-z]+', tip):
+            meta['prefix'] = tip.casefold()
     else:
         raise ValueError('该题型缺少已验证的荷花题库映射')
     return request, meta
@@ -229,13 +232,37 @@ def parse_answer(payload, request, meta):
         return ','.join(answers)
     if any(len(x) != n or not re.fullmatch(r"[A-Za-z'-]+", x) for x,n in zip(answers,meta['lengths'])):
         return None
+    if meta.get('prefix') and not answers[0].casefold().startswith(meta['prefix']):
+        return None
     return json.dumps(answers) if mode == 73 else answers[0]
+
+
+def add_course_vocabulary_context(public_info, request, meta):
+    """Give Lotus official course candidates, never substitute a local answer."""
+    if meta['mode'] not in (51, 52, 53, 54, 55, 56, 57, 58) or len(meta.get('lengths', [])) != 1:
+        return
+    words = getattr(public_info, 'word_list', [])
+    if isinstance(words, dict):
+        words = [word for group in words.values() if isinstance(group, list) for word in group]
+    if not isinstance(words, list):
+        return
+    prefix = meta.get('prefix', '')
+    candidates = list(dict.fromkeys(word for word in words if isinstance(word, str)
+                     and len(word) == meta['lengths'][0] and word.casefold().startswith(prefix)))
+    if not candidates or len(candidates) > 30:
+        return
+    extra = '当前课程词表中符合长度和已知前缀的候选词（仅作辅助，请结合题干判断）：' + json.dumps(candidates, ensure_ascii=False)
+    context = request.get('context', '')
+    combined = context + ('\n' if context else '') + extra
+    if len(combined.encode('utf-8')) <= 1024 * 1024:
+        request['context'] = combined
 
 
 def answer_from_lotus(public_info, mode):
     settings = load_settings(public_info.path)
     try:
         request, meta = build_question(public_info.exam, mode)
+        add_course_vocabulary_context(public_info, request, meta)
     except (ValueError, TypeError, KeyError, AttributeError):
         logger.info('荷花题库：题型或结构无法可靠映射，转入旧逻辑兜底。')
         return None

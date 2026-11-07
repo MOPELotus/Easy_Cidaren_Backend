@@ -163,3 +163,25 @@ class LotusTests(unittest.TestCase):
         self.assertEqual(self.parsed(e,['trade','sth.','for','sth.']),'trade,sth.,for,sth.')
         ambiguous=exam(15,[{'content':'same'},{'content':'same'}])
         with self.assertRaises(ValueError):build_question(ambiguous,15)
+
+    def test_spelling_prefix_mismatch_is_not_submitted(self):
+        e=exam(51,w_lens=[5],w_tip='st')
+        self.assertIsNone(self.parsed(e,['house']))
+        self.assertEqual(self.parsed(e,['store']),'store')
+
+    def test_official_course_candidates_disambiguate_spelling_without_local_answering(self):
+        from api.lotus_tiku import add_course_vocabulary_context
+        e=exam(51,w_lens=[9],w_tip='cri')
+        request,meta=build_question(e,51);request['context']='existing-context'
+        public=SimpleNamespace(word_list=['criticize','store','criminal','criticize'])
+        add_course_vocabulary_context(public,request,meta)
+        self.assertIn('criticize',request['context']);self.assertNotIn('criminal',request['context'])
+        self.assertTrue(request['context'].startswith('existing-context'))
+        self.assertEqual(public.word_list,['criticize','store','criminal','criticize'])
+
+    def test_course_context_does_not_override_explicit_context_size_limit(self):
+        from api.lotus_tiku import add_course_vocabulary_context
+        e=exam(51,w_lens=[5],w_tip='st');request,meta=build_question(e,51)
+        request['context']='x'*(1024*1024)
+        add_course_vocabulary_context(SimpleNamespace(word_list=['store']),request,meta)
+        self.assertEqual(len(request['context']),1024*1024)
