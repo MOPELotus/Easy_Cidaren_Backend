@@ -45,7 +45,7 @@ class PublicInfo:
         self.skip_count = 0
         self.lotus_answer_count = 0
         self.fallback_answer_count = 0
-        self._counted_answer_topics = set()
+        self._counted_answer_topics = {}
         # query_answer
         self._topic_code = ''
         self.word_query_result = ''

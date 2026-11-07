@@ -559,9 +559,13 @@ def answer(public_info, mode):
 def count_answer_source(public_info, key, source):
     counted = getattr(public_info, '_counted_answer_topics', None)
     if counted is None:
-        counted = public_info._counted_answer_topics = set()
-    if key in counted:
+        counted = public_info._counted_answer_topics = {}
+    previous = counted.get(key)
+    if previous == source:
         return
-    counted.add(key)
+    if previous is not None:
+        previous_field = 'lotus_answer_count' if previous == 'lotus' else 'fallback_answer_count'
+        setattr(public_info, previous_field, getattr(public_info, previous_field, 0) - 1)
+    counted[key] = source
     field = 'lotus_answer_count' if source == 'lotus' else 'fallback_answer_count'
     setattr(public_info, field, getattr(public_info, field, 0) + 1)

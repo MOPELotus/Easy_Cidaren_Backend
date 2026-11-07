@@ -148,3 +148,11 @@ class LotusTests(unittest.TestCase):
         from answer_questions.answer_questions import answer
         with patch('api.lotus_tiku.answer_from_lotus',return_value=None):
             self.assertIsNone(answer(SimpleNamespace(exam=exam(999)),999))
+
+    def test_source_switch_updates_final_source_without_double_count(self):
+        from answer_questions.answer_questions import count_answer_source
+        p=SimpleNamespace()
+        count_answer_source(p,('task','topic'),'lotus')
+        count_answer_source(p,('task','topic'),'fallback')
+        count_answer_source(p,('task','topic'),'fallback')
+        self.assertEqual(p.lotus_answer_count,0);self.assertEqual(p.fallback_answer_count,1)
