@@ -13,6 +13,7 @@ import time
 from collections.abc import Callable, Mapping
 
 from answer_questions.answer_questions import answer, jump_read, submit
+from api.lotus_tiku import load_settings
 from api.basic_api import get_all_unit, get_book_all_words, get_unit_words
 from api.main_api import get_exam, get_task_score, select_all_word, skip_exam
 from decryptencrypt.debase64 import debase64
@@ -38,13 +39,9 @@ class HeadlessTaskRunner:
         self.public = PublicInfo(str(pathlib.Path(root)))
         self._progress = progress or (lambda _done, _total, _message: None)
         self._log = log or (lambda _message: None)
-        # Optional Asterism answer adapter.  The donor answer state machine is
-        # intentionally kept intact; this hook only replaces the answer value
-        # for a question when the control plane supplied a matching candidate.
-        self._answer_override = None
 
-    def set_answer_override(self, callback: Callable[[PublicInfo, int], object | None] | None) -> None:
-        self._answer_override = callback
+    def set_answer_override(self, callback):
+        raise ValueError("当前版本只使用荷花题库，不接受外部答案覆盖。")
 
     def _emit_progress(self, message: str = "正在执行词达人原生答题流程") -> None:
         exam = self.public.exam
@@ -61,7 +58,7 @@ class HeadlessTaskRunner:
                 get_unit_words(public)
                 handle_word_result(public)
             except Exception as error:
-                self._log(f"加载词表失败，继续使用 donor 兜底逻辑：{error}")
+                self._log(f"加载词表失败，继续由荷花题库解答：{error}")
         get_exam(public)
         if public.exam == "complete":
             self._log("上游报告任务已经完成")
@@ -73,13 +70,7 @@ class HeadlessTaskRunner:
             if mode == 0:
                 jump_read(public)
             else:
-                option = (
-                    self._answer_override(public, mode)
-                    if self._answer_override is not None
-                    else None
-                )
-                if option is None:
-                    option = answer(public, mode)
+                option = answer(public, mode)
                 if option is None:
                     public.topic_code = public.exam["topic_code"]
                     public.skip_count += 1
@@ -115,6 +106,7 @@ class HeadlessTaskRunner:
         self._answer_current_task()
 
     def run_unit(self, unit: Mapping) -> dict:
+        load_settings(self.public.path)
         public = self.public
         public.course_id = unit.get("course_id") or public.course_id
         public.now_unit = unit.get("list_id") or unit.get("id")
@@ -126,6 +118,7 @@ class HeadlessTaskRunner:
         return self._result()
 
     def run_class_task(self, task: Mapping) -> dict:
+        load_settings(self.public.path)
         public = self.public
         task_name = str(task.get("task_name") or task.get("name") or task.get("task_id") or "词达人任务")
         public.course_id = task.get("course_id") or public.course_id

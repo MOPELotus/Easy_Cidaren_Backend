@@ -43,3 +43,26 @@ The OAuth request version follows the official H5 build `2.7.0.261019_01`.
 Full response envelopes now honor their embedded `jv=99`, and malformed callback
 ports fail as OAuth errors. Synthetic handshake and authenticated-decryption tests
 cover these paths. Real WeChat authorization still requires the account owner.
+
+## Lotus-only answer provider (2026-11-07)
+
+All automatic answers now come exclusively from the Lotus OCS `POST /search`
+endpoint. Configure `EASY_CIDAREN_LOTUS_TOKEN` and optionally
+`EASY_CIDAREN_LOTUS_URL` (default `https://tiku.lotusshared.cn/search`), or create
+an untracked `config/lotus.json` with `url`, `token` and optional `timeout` (seconds).
+No production credentials are included in this public library.
+
+Manual-only, missing, malformed or unsupported answers are skipped; transport,
+authentication and service failures stop the task. There is no local answer bank,
+rule-based or random fallback. Local self-learning writes are disabled.
+`set_answer_override()` is rejected to prevent bypassing the sole provider.
+The runner checks credentials before starting task operations.
+
+Choice letters are mapped to original Cidaren answer tags, preserving option
+order, nested options and string tags. Supported mappings include choices,
+matching, phrase and spelling blanks. Audio-only mode 13 is skipped until an
+explicit audio protocol is implemented. Never guess an unheard audio answer.
+
+Run `python -m unittest discover -s tests`. Set `OCS_AI_SOURCE` to the installed
+OCS adapter to additionally test the real server, parser and normalizer with a
+synthetic model. Real course submissions still require an authorized account.

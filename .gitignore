@@ -3,3 +3,5 @@ __pycache__/
 log/logs/
 .pytest_cache/
 .venv/
+
+config/lotus.json
