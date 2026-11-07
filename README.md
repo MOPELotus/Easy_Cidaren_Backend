@@ -44,25 +44,32 @@ Full response envelopes now honor their embedded `jv=99`, and malformed callback
 ports fail as OAuth errors. Synthetic handshake and authenticated-decryption tests
 cover these paths. Real WeChat authorization still requires the account owner.
 
-## Lotus-only answer provider (2026-11-07)
+## Lotus-first answer provider (2026-11-07)
 
-All automatic answers now come exclusively from the Lotus OCS `POST /search`
-endpoint. Configure `EASY_CIDAREN_LOTUS_TOKEN` and optionally
-`EASY_CIDAREN_LOTUS_URL` (default `https://tiku.lotusshared.cn/search`), or create
-an untracked `config/lotus.json` with `url`, `token` and optional `timeout` (seconds).
-No production credentials are included in this public library.
+All questions first use Lotus OCS `POST /search`. Configure
+`EASY_CIDAREN_LOTUS_TOKEN` and optionally `EASY_CIDAREN_LOTUS_URL`
+(default `https://tiku.lotusshared.cn/search`), or an untracked
+`config/lotus.json` containing `url`, `token` and optional `timeout` seconds.
+This public repository contains no production credential.
 
-Manual-only, missing, malformed or unsupported answers are skipped; transport,
-authentication and service failures stop the task. There is no local answer bank,
-rule-based or random fallback. Local self-learning writes are disabled.
-`set_answer_override()` is rejected to prevent bypassing the sole provider.
-The runner checks credentials before starting task operations.
+On missing, manual-only, malformed or unavailable Lotus answers, the original
+answer bank, vocabulary/rule matching and guessing logic is used. Unsupported
+questions in both paths are skipped. `set_answer_override()` supplies an optional
+fallback only; it never bypasses a successful Lotus answer.
 
-Choice letters are mapped to original Cidaren answer tags, preserving option
-order, nested options and string tags. Supported mappings include choices,
-matching, phrase and spelling blanks. Audio-only mode 13 is skipped until an
-explicit audio protocol is implemented. Never guess an unheard audio answer.
+Images preserve stem/option ownership, including native Cidaren base64 flags
+`enable_i_i` and `enable_i_o`. Official `stem.ph_en_url` / `ph_us_url` and TTS
+paths are sent as `audio` for the Lotus server's Whisper ASR. Explicit audio
+lists, native image mappings and string `context` are also forwarded.
+Mode 13 is sentence-to-sentence choice; listening modes are 21/22.
+Variant mode IDs normalize to their first two digits, matching the official UI.
+
+Results include `lotus_answer_count` and `fallback_answer_count`. Counts measure
+successfully submitted questions, once per task/topic; retries and multiple
+submissions for a matching question do not double-count, and skips are excluded.
 
 Run `python -m unittest discover -s tests`. Set `OCS_AI_SOURCE` to the installed
-OCS adapter to additionally test the real server, parser and normalizer with a
-synthetic model. Real course submissions still require an authorized account.
+OCS adapter to additionally test its real server, image handling, context, audio
+transcript insertion, parser and normalizer with synthetic model/ASR runners.
+A production Cidaren public MP3 has separately passed real Whisper and Lotus
+answering. Real account course submissions remain unverified.

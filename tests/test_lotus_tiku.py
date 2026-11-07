@@ -21,7 +21,7 @@ class LotusTests(unittest.TestCase):
 
     def test_original_option_order_and_nonsequential_tags(self):
         for mode in [11,15,16,17,18,21,22,41,42,43,44]:
-            with self.subTest(mode=mode):self.assertEqual(self.parsed(exam(mode),['B']),3)
+            with self.subTest(mode=mode):self.assertEqual(self.parsed(exam(mode,stem={'content':'Choose','ph_en_url':'/pack.mp3'}),['B']),3)
 
     def test_nested_and_string_tags(self):
         e=exam(42,[{'content':'walk','answer_tag':'1#','sub_options':[{'content':'walked','answer_tag':2},{'content':'walking','answer_tag':4}]},{'content':'run','answer_tag':'2#'}])
@@ -63,7 +63,7 @@ class LotusTests(unittest.TestCase):
         self.assertIsNone(self.parsed(e,['Z','A']))
 
     def test_unsupported_audio_and_ambiguous_structure_skip(self):
-        for e in [exam(13),exam(999),exam(32),exam(51),exam(15,[{'content':'same'},{'content':'same'}])]:
+        for e in [exam(21),exam(999),exam(32),exam(51),exam(15,[{'content':'same'},{'content':'same'}])]:
             with self.subTest(mode=e['topic_mode']),self.assertRaises(ValueError):build_question(e,e['topic_mode'])
 
     def settings(self,root):
@@ -89,12 +89,62 @@ class LotusTests(unittest.TestCase):
             self.settings(root)
             with patch.dict('os.environ',{'EASY_CIDAREN_LOTUS_URL':'http://example.com/search'}),self.assertRaises(LotusError):load_settings(root)
 
-    def test_public_answer_entry_never_uses_local_rules(self):
+    def test_lotus_first_then_legacy_fallback(self):
         from answer_questions.answer_questions import answer
-        with patch('answer_questions.answer_questions.answer_from_lotus',return_value=None) as lotus:
-            self.assertIsNone(answer(SimpleNamespace(),13));lotus.assert_called_once()
+        public=SimpleNamespace(exam=exam())
+        with patch('api.lotus_tiku.answer_from_lotus',return_value=9),patch('answer_questions.answer_questions.legacy_answer') as legacy:
+            self.assertEqual(answer(public,15),9);legacy.assert_not_called();self.assertEqual(public.last_answer_source,'lotus')
+        for result in [None,LotusError('test')]:
+            with patch('api.lotus_tiku.answer_from_lotus',**({'side_effect':result} if isinstance(result,Exception) else {'return_value':result})),patch('answer_questions.answer_questions.legacy_answer',return_value=3) as legacy:
+                self.assertEqual(answer(public,15),3);legacy.assert_called_once();self.assertEqual(public.last_answer_source,'fallback')
 
-    def test_headless_override_is_rejected(self):
+    def test_headless_override_only_on_fallback(self):
         from api.runner import HeadlessTaskRunner
-        runner=object.__new__(HeadlessTaskRunner)
-        with self.assertRaises(ValueError):runner.set_answer_override(lambda *_:3)
+        from answer_questions.answer_questions import answer
+        runner=object.__new__(HeadlessTaskRunner);runner.public=SimpleNamespace(exam=exam())
+        callback=Mock(return_value=8);runner.set_answer_override(callback)
+        with patch('api.lotus_tiku.answer_from_lotus',return_value=2):
+            self.assertEqual(answer(runner.public,15),2);callback.assert_not_called()
+        with patch('api.lotus_tiku.answer_from_lotus',return_value=None):self.assertEqual(answer(runner.public,15),8)
+
+    def test_media_flags_context_and_variant_modes(self):
+        import base64
+        png='iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+jT1cAAAAASUVORK5CYII='
+        e=exam(151,[{'content':png,'answer_tag':7},{'content':png+'other','answer_tag':8}],enable_i_i=1,enable_i_o=1,context='辅助材料')
+        e['stem']['content']=png
+        req,meta=build_question(e,151)
+        self.assertIn('data:image/png;base64,',req['title']);self.assertIn('data:image/png;base64,',req['options'][0]);self.assertEqual(req['context'],'辅助材料')
+        self.assertEqual(meta['mode'],15)
+        self.assertEqual(parse_answer({'code':1,'answers':['B']},req,meta),8)
+
+    def test_actual_audio_fields_and_tts_path(self):
+        e=exam(21,stem={'content':'','ph_en_url':'/Resource/pack.mp3'})
+        req,_=build_question(e,21);self.assertEqual(req['audio'],[{'url':'https://resource.vocabgo.com/Resource/pack.mp3'}])
+        e=exam(22,stem={'content':'Listen','ph_us_url':'abc.mp3','au_addr':'https://resource-cdn.vocabgo.com'},word_type=2)
+        req,_=build_question(e,22);self.assertEqual(req['audio'][0]['url'],'https://resource-cdn.vocabgo.com/AudioTTS/SEN/US/Mabc.mp3')
+        req,_=build_question(exam(13),13);self.assertNotIn('audio',req)
+
+    def test_submitted_question_counts_once_after_success(self):
+        from answer_questions.answer_questions import submit
+        p=SimpleNamespace(exam={'topic_code':'topic-1'},task_id='task',last_answer_source='lotus')
+        with patch('answer_questions.answer_questions.submit_result'),patch('answer_questions.answer_questions.next_exam'),patch('answer_questions.answer_questions.time.sleep'):
+            submit(p,{'first':1,'second':2});submit(p,1)
+        self.assertEqual(p.lotus_answer_count,1)
+        p.exam={'topic_code':'topic-2'};p.last_answer_source='fallback'
+        with patch('answer_questions.answer_questions.submit_result',side_effect=RuntimeError),self.assertRaises(RuntimeError):submit(p,2)
+        self.assertEqual(getattr(p,'fallback_answer_count',0),0)
+        with patch('answer_questions.answer_questions.submit_result'),patch('answer_questions.answer_questions.next_exam'),patch('answer_questions.answer_questions.time.sleep'):submit(p,2)
+        self.assertEqual(p.fallback_answer_count,1)
+
+    def test_native_images_and_multiple_audio_are_forwarded_without_ownership_guess(self):
+        e=exam(15,images=['data:image/png;base64,test'],original_title='原题',suggestion_title='[图片1]',audio=[{'url':'https://example.org/a.mp3'},{'objectId':'a'*32}])
+        request,_=build_question(e,15)
+        self.assertEqual(request['images'],e['images']);self.assertEqual(request['original_title'],'原题')
+        self.assertEqual(request['audio'],e['audio']);self.assertEqual(request['suggestion_title'],'[图片1]')
+        e['audio']=['https://example.org/a.mp3']*5
+        with self.assertRaises(ValueError):build_question(e,15)
+
+    def test_unsupported_both_providers_skips_without_crashing_task(self):
+        from answer_questions.answer_questions import answer
+        with patch('api.lotus_tiku.answer_from_lotus',return_value=None):
+            self.assertIsNone(answer(SimpleNamespace(exam=exam(999)),999))

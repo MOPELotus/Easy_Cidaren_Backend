@@ -13,7 +13,6 @@ import time
 from collections.abc import Callable, Mapping
 
 from answer_questions.answer_questions import answer, jump_read, submit
-from api.lotus_tiku import load_settings
 from api.basic_api import get_all_unit, get_book_all_words, get_unit_words
 from api.main_api import get_exam, get_task_score, select_all_word, skip_exam
 from decryptencrypt.debase64 import debase64
@@ -41,7 +40,7 @@ class HeadlessTaskRunner:
         self._log = log or (lambda _message: None)
 
     def set_answer_override(self, callback):
-        raise ValueError("当前版本只使用荷花题库，不接受外部答案覆盖。")
+        self.public._legacy_answer_override = callback
 
     def _emit_progress(self, message: str = "正在执行词达人原生答题流程") -> None:
         exam = self.public.exam
@@ -106,7 +105,6 @@ class HeadlessTaskRunner:
         self._answer_current_task()
 
     def run_unit(self, unit: Mapping) -> dict:
-        load_settings(self.public.path)
         public = self.public
         public.course_id = unit.get("course_id") or public.course_id
         public.now_unit = unit.get("list_id") or unit.get("id")
@@ -118,7 +116,6 @@ class HeadlessTaskRunner:
         return self._result()
 
     def run_class_task(self, task: Mapping) -> dict:
-        load_settings(self.public.path)
         public = self.public
         task_name = str(task.get("task_name") or task.get("name") or task.get("task_id") or "词达人任务")
         public.course_id = task.get("course_id") or public.course_id
@@ -174,5 +171,7 @@ class HeadlessTaskRunner:
             "right_count": self.public.right_count,
             "wrong_count": self.public.wrong_count,
             "skip_count": self.public.skip_count,
+            "lotus_answer_count": self.public.lotus_answer_count,
+            "fallback_answer_count": self.public.fallback_answer_count,
         }
 

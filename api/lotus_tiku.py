@@ -1,9 +1,10 @@
-"""Strict Cidaren adapter for Lotus OCS /search; no alternative answer source."""
+"""Cidaren protocol adapter for Lotus OCS /search, including images and ASR audio."""
 import json
+import html
 import os
 import re
 from pathlib import Path
-from urllib.parse import urlsplit
+from urllib.parse import urlsplit, urljoin
 
 import requests
 
@@ -43,12 +44,61 @@ def _text(value):
     return value.strip()
 
 
+def normalized_mode(mode):
+    text = str(mode)
+    return int(text[:2]) if text.isdigit() and len(text) > 2 else mode
+
+
+def render_content(value, is_picture=False):
+    value = _text(value)
+    if is_picture:
+        if not value.startswith('data:image/'):
+            value = 'data:image/png;base64,' + value
+        return '<img src="' + html.escape(value, quote=True) + '">'
+    # Preserve the actual image position, including relative and protocol-relative URLs.
+    def absolute(match):
+        url = urljoin('https://resource.vocabgo.com/', match.group(2))
+        return match.group(1) + html.escape(url, quote=True) + match.group(3)
+    return re.sub(r"((?:src|data-src|data-original|data-lazy-src)=[\"'])([^\"']+)([\"'])", absolute, value)
+
+
+def audio_sources(exam):
+    explicit = exam.get('audio')
+    if explicit is not None:
+        values = explicit if isinstance(explicit, list) else [explicit]
+        if not 1 <= len(values) <= 4:
+            raise ValueError('音频数量无效')
+        result = []
+        for value in values:
+            item = {'url': value} if isinstance(value, str) else value
+            if not isinstance(item, dict) or set(item) not in ({'url'}, {'objectId'}):
+                raise ValueError('音频来源不明确')
+            key = next(iter(item))
+            if not isinstance(item[key], str) or not item[key].strip():
+                raise ValueError('音频来源为空')
+            result.append(dict(item))
+        return result
+    stem = exam.get('stem') or {}
+    for language in ('en', 'us'):
+        value = stem.get('ph_' + language + '_url')
+        if not value:
+            continue
+        value = _text(value).replace('%', '_')
+        if exam.get('word_type') == 2:
+            base = stem.get('au_addr')
+            if not isinstance(base, str) or not base.startswith('https://'):
+                raise ValueError('TTS 资源缺少地址')
+            value = base.rstrip('/') + '/AudioTTS/SEN/' + language.upper() + '/M' + value
+        return [{'url': urljoin('https://resource.vocabgo.com/', value)}]
+    return []
+
+
 def _options(exam):
     result = []
     for index, item in enumerate(exam.get('options') or []):
         if not isinstance(item, dict):
             raise ValueError('选项结构不明确')
-        content = _text(item.get('content'))
+        content = render_content(item.get('content'), exam.get('enable_i_o') == 1)
         tag = item.get('answer_tag', index)
         children = item.get('sub_options') or []
         if children:
@@ -58,7 +108,7 @@ def _options(exam):
                 result.append((content + ' ' + _text(child.get('content')), tag + str(child['answer_tag'])))
         else:
             # The donor protocol uses a trailing 0 for string-tagged sentence options.
-            if isinstance(tag, str) and exam['topic_mode'] in (41, 42, 43, 44):
+            if isinstance(tag, str) and normalized_mode(exam['topic_mode']) in (41, 42, 43, 44, 46):
                 tag += '0'
             if isinstance(tag, bool) or not isinstance(tag, (str, int)):
                 raise ValueError('选项提交标记无效')
@@ -71,12 +121,18 @@ def _options(exam):
 def build_question(exam, mode):
     if not isinstance(exam, dict) or exam.get('topic_mode') != mode:
         raise ValueError('题型不一致')
+    mode = normalized_mode(mode)
     stem = exam.get('stem') or {}
-    content = _text(stem.get('content') or '')
+    content = render_content(stem.get('content') or '', exam.get('enable_i_i') == 1)
     remark = stem.get('remark')
     title = content
     if isinstance(remark, str) and remark.strip():
         title += '\n中文提示：' + remark.strip()
+    audio = audio_sources(exam) if mode in (21, 22, 61) or exam.get('audio') is not None else []
+    if mode in (21, 22) and not audio:
+        raise ValueError('听音题缺少实际音频')
+    if audio and not title.strip():
+        title = '根据音频选择正确选项'
     if mode == 31 and isinstance(remark, list) and not title.strip():
         title = '请选择每个项目对应的选项'
     if not title.strip():
@@ -84,7 +140,22 @@ def build_question(exam, mode):
     options = _options(exam)
     request = {'type': 'single', 'title': title, 'options': [x[0] for x in options]}
     meta = {'mode': mode, 'options': options}
-    if mode in (11, 15, 16, 17, 18, 21, 22, 41, 42, 43, 44):
+    if audio:
+        request['audio'] = audio
+    context = exam.get('context')
+    if isinstance(context, str) and context.strip():
+        request['context'] = context
+    if exam.get('images'):
+        images = exam['images']
+        if not isinstance(images, list) or not all(isinstance(x, str) and x.startswith('data:image/') for x in images):
+            raise ValueError('原生图片必须带明确 data URI')
+        request['images'] = images
+        for field in ('original_title', 'original_options', 'suggestion_title', 'suggestion_options'):
+            if field in exam:
+                request[field] = exam[field]
+    if mode == 61:
+        request['title'] += '\n选择与其他选项发音不同的单词。'
+    if mode in (11, 13, 15, 16, 17, 18, 21, 22, 41, 42, 43, 44, 46, 61, 62, 71, 72):
         if len(options) < 2:
             raise ValueError('选择题缺少选项')
     elif mode == 31:
@@ -103,8 +174,8 @@ def build_question(exam, mode):
             raise ValueError('短语填空缺少明确空位')
         request.update(type='completion', blankCount=count,
                        title=title + '\n按空位顺序逐项填写英文单词；_-_ 对应两个单词，固定词不要重复填写。')
-    elif mode in (51, 52, 53, 54, 73):
-        lengths = exam.get('w_lens')
+    elif mode in (51, 52, 53, 54, 55, 56, 57, 58, 73):
+        lengths = exam.get('w_lens') or exam.get('wlens') or ([exam['w_len']] if exam.get('w_len') else None)
         if not isinstance(lengths, list) or not lengths or any(type(n) is not int or n < 1 for n in lengths):
             raise ValueError('拼写题缺少明确空位长度')
         if mode != 73 and len(lengths) != 1:
@@ -113,7 +184,6 @@ def build_question(exam, mode):
                        title=title + '\n按空位顺序填写完整单词。字母数：' + json.dumps(lengths) + '\n已知前缀：' + str(exam.get('w_tip') or ''))
         meta['lengths'] = lengths
     else:
-        # Audio-only mode 13 needs a verified audio transport; never pretend to hear it.
         raise ValueError('该题型缺少已验证的荷花题库映射')
     return request, meta
 
@@ -122,7 +192,7 @@ def parse_answer(payload, request, meta):
     if isinstance(payload, dict) and payload.get('code') != 1 and payload.get('error') in ('NO_ANSWER', 'LOTUS_MANUAL_REQUIRED', 'UNSUPPORTED_TYPE'):
         return None
     if not isinstance(payload, dict) or payload.get('code') != 1:
-        raise LotusError('荷花题库未成功返回答案，任务停止；不会切换答案来源。')
+        raise LotusError('荷花题库未成功返回答案，转入旧逻辑兜底；将使用旧逻辑兜底。')
     if payload.get('manual', False) is not False:
         return None
     kind = payload.get('type', request['type'])
@@ -167,7 +237,7 @@ def answer_from_lotus(public_info, mode):
     try:
         request, meta = build_question(public_info.exam, mode)
     except (ValueError, TypeError, KeyError, AttributeError):
-        logger.info('荷花题库：题型或结构无法可靠映射，跳过；不猜答案。')
+        logger.info('荷花题库：题型或结构无法可靠映射，转入旧逻辑兜底。')
         return None
     try:
         # One request only: a timed-out model may still be running on the server.
@@ -175,9 +245,9 @@ def answer_from_lotus(public_info, mode):
                                  headers={'Authorization': 'Bearer ' + settings['token']},
                                  timeout=settings['timeout'], allow_redirects=False)
         if response.status_code != 200:
-            raise LotusError(f'荷花题库 HTTP {response.status_code}，任务停止。')
+            raise LotusError(f'荷花题库 HTTP {response.status_code}，转入旧逻辑兜底。')
         result = parse_answer(response.json(), request, meta)
     except (requests.RequestException, ValueError):
-        raise LotusError('荷花题库连接或响应无效，任务停止；不会重试猜答。') from None
+        raise LotusError('荷花题库连接或响应无效，转入旧逻辑兜底；不重复题库请求。') from None
     logger.info('荷花题库：%s', '答案已校验' if result is not None else '无可自动提交的答案，跳过')
     return result
